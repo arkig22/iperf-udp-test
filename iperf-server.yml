@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server
+  template:
+    metadata:
+      labels:
+        app: iperf-server
+    spec:
+      containers:
+      - name: server-pod
+        image: l7mp/net-debug
+        command: ["iperf", "-s", "-u", "-e", "--realtime"]
