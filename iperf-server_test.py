@@ -2,8 +2,6 @@
 #nodeport loadbalancer yml -- Tamás
 #két serverre sok kliens aztán kilő
 #python pandas
-#cleanup a végén
-#github repo
 
 import subprocess
 import time
@@ -20,23 +18,47 @@ DEFAULT_SERVICE = "1"
 external_ip = ""
 mcs_clusterset_ip = ""
 client_pod = ""
+port = "5001"
 
 def init(place, service):
 
     global external_ip
     global mcs_clusterset_ip
     global client_pod
+    global port
     
     subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server.yml'])
-    subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server-loadbalancer.yml'])
     
-    while True:
-        lb_ip = subprocess.run(['kubectl', '--context', 'mcs-eu', 'get', 'service', 'iperf-server-loadbalancer', '-o', 'jsonpath={.status.loadBalancer.ingress[0].ip}'], capture_output=True, text=True)
-        if lb_ip.stdout.strip() != '':
-            external_ip = lb_ip.stdout.strip()
-            break
-        time.sleep(1)
+    #loadbalancer service
+    if service == "1":
+        subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server-loadbalancer.yml'])
+    
+        #wait for the external ip of the service
+        while True:
+            lb_ip = subprocess.run(['kubectl', '--context', 'mcs-eu', 'get', 'service', 
+                                    'iperf-server-loadbalancer', '-o', 'jsonpath={.status.loadBalancer.ingress[0].ip}'], capture_output=True, text=True)
+            if lb_ip.stdout.strip() != '':
+                external_ip = lb_ip.stdout.strip()
+                break
+            time.sleep(1)
         
+    #nodeport service    
+    if service == "2":
+        subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server-nodeport.yml'])
+        
+        #new port instead of 5001
+        output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'service', 'iperf-server-nodeport', '-o', 'jsonpath="{.spec.ports[0].nodePort}"'])
+        port = output.decode("utf-8").replace('"', '')
+        
+        #name of the node running the pod
+        output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'po', '-l', 'app=iperf-server', '-o', 'jsonpath="{.items[0].spec.nodeName}"'])
+        nodeName = output.decode("utf-8").replace('"', '')
+        
+        #external ip of the node
+        output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'nodes', nodeName, '-o', 'jsonpath="{status.addresses[1].address}"'])
+        external_ip = output.decode("utf-8").replace('"', '')
+    
+    #remote client    !!!
     if place == "2":
         print("asd")
         subprocess.call(['kubectl', '--context', 'mcs-am', 'apply', '-f', 'iperf-client.yml'])
@@ -46,17 +68,16 @@ def init(place, service):
 
         output = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'po', '-o', 'jsonpath="{.items[0].metadata.name}"'])
         client_pod = output.decode("utf-8").replace('"', '')
-    
-    
+        
 def test(count, place, service):
 
     for i in range(int(count)):
     
             if place == "1":
-                cmd = ['iperf', '-c', external_ip, '-u', '-i', args.interval, '-b', args.bandwidth, '-l', args.length, '-t', args.time, '-p', '5001']
+                cmd = ['iperf', '-c', external_ip, '-u', '-i', args.interval, '-b', args.bandwidth, '-l', args.length, '-t', args.time, '-p', port]
             if place == "2":
                 cmd = ['kubectl', '--context', 'mcs-am', 'exec', '-it', client_pod, '--', 
-                       'iperf', '-c', mcs_clusterset_ip, '-u', '-i', args.interval, '-b', args.bandwidth, '-l', args.length, '-t', args.time, '-p', '5001']
+                       'iperf', '-c', mcs_clusterset_ip, '-u', '-i', args.interval, '-b', args.bandwidth, '-l', args.length, '-t', args.time, '-p', port]
                        
             subprocess.run(cmd)
             time.sleep(2)
@@ -84,4 +105,4 @@ if __name__ == "__main__":
 
     init(args.place, args.service)
     test(args.count, args.place, args.service)
-    cleanup(args.place, args.service)
+    #cleanup(args.place, args.service)
