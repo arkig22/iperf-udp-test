@@ -15,4 +15,4 @@ spec:
       containers:
       - name: server-pod
         image: l7mp/net-debug
-        command: ["iperf", "-s", "-u", "-e", "--realtime"]
+        command: ["iperf", "-s", "-u", "-e", "--realtime", "-p", "5001"]
