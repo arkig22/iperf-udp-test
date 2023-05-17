@@ -1,21 +1,19 @@
 #nodeport loadbalancer yml -- Tamás amerika np 5001?
-#két serverre sok kliens aztán kilő
 #python pandas
-#iperf test a terminálban is, megvárni mindent, nodeport nincs out-of-order?
+#iperf test a terminálban is, nodeport csak néha out-of-order?
 
 import subprocess
 import time
 import argparse
-import pandas as pd
 import datetime
 import re
 
 DEFAULT_INTERVAL = "1"
-DEFAULT_BANDWITH = "1g"
-DEFAULT_TIME = "5"
-DEFAULT_LENGTH ="100"
-DEFAULT_COUNT = "2"
-DEFAULT_PLACE = "2"
+DEFAULT_BANDWITH = "100m"
+DEFAULT_TIME = "10"
+DEFAULT_LENGTH ="200"
+DEFAULT_COUNT = "1"
+DEFAULT_PLACE = "1"
 DEFAULT_SERVICE = "1"
 external_ip = ""
 mcs_clusterset_ip = ""
@@ -38,10 +36,8 @@ def init(place, service):
     
         #wait for the external ip of the service
         while True:
-            lb_ip = subprocess.run(['kubectl', '--context', 'mcs-eu', 'get', 'service', 
-                                    'iperf-server-loadbalancer', '-o', 'jsonpath={.status.loadBalancer.ingress[0].ip}'], capture_output=True, text=True)
-            if lb_ip.stdout.strip() != '':
-                external_ip = lb_ip.stdout.strip()
+            external_ip = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'service', 'iperf-server-loadbalancer', '-o', 'jsonpath={.status.loadBalancer.ingress[0].ip}']).decode("utf-8").replace('"', '')
+            if external_ip != '': 
                 break
             time.sleep(1)
         
@@ -50,18 +46,15 @@ def init(place, service):
         subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server-np.yml'])
         
         #new port instead of 5001, only with local cluster
-        if place == "1":
-            output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'service', 'iperf-server-nodeport', '-o', 'jsonpath="{.spec.ports[0].nodePort}"'])
-            port = output.decode("utf-8").replace('"', '')
+        if place == "1": 
+            port = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'service', 'iperf-server-nodeport', '-o', 'jsonpath="{.spec.ports[0].nodePort}"']).decode("utf-8").replace('"', '')
         
         #name of the node running the pod
-        output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'po', '-l', 'app=iperf-server', '-o', 'jsonpath="{.items[0].spec.nodeName}"'])
-        nodeName = output.decode("utf-8").replace('"', '')
+        nodeName = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'po', '-l', 'app=iperf-server', '-o', 'jsonpath="{.items[0].spec.nodeName}"']).decode("utf-8").replace('"', '')
         
         #external ip of the node
-        output = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'nodes', nodeName, '-o', 'jsonpath="{.status.addresses[1].address}"'])
-        external_ip = output.decode("utf-8").replace('"', '')
-    
+        external_ip = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'nodes', nodeName, '-o', 'jsonpath="{.status.addresses[1].address}"']).decode("utf-8").replace('"', '')
+
     #remote client
     if place == "2":
 
@@ -69,29 +62,25 @@ def init(place, service):
         subprocess.call(['kubectl', '--context', 'mcs-am', 'apply', '-f', 'iperf-client.yml'])
         
         #serviceexport according to the type of service
-        if service == "1":
+        if service == "1": 
             subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'serviceExport_lb.yml'])
 
-        if service == "2":
+        if service == "2": 
             subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'serviceExport_np.yml'])   
 
         #wait for the serviceimport and the deployment to be created
         while True:
-            output = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'serviceimports', '-o', 'jsonpath="{.items}"'])
-            result = output.decode("utf-8").replace('"', '')
-            output = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'po', '-o', 'jsonpath="{.items[0].status.phase}"'])
-            phase = output.decode("utf-8").replace('"', '')
-            if result != "[]" and phase == "Running":
+            result = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'serviceimports', '-o', 'jsonpath="{.items}"']).decode("utf-8").replace('"', '')
+            phase = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'po', '-o', 'jsonpath="{.items[0].status.phase}"']).decode("utf-8").replace('"', '')
+            if result != "[]" and phase == "Running": 
                 break
             time.sleep(3)
             
         #ip address of the serviceexport
-        output = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'serviceimports', '-o', 'jsonpath="{.items[0].spec.ips[0]}"'])
-        mcs_clusterset_ip = output.decode("utf-8").replace('"', '')
+        mcs_clusterset_ip = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'serviceimports', '-o', 'jsonpath="{.items[0].spec.ips[0]}"']).decode("utf-8").replace('"', '')
         
         #name of the client pod
-        output = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'po', '-o', 'jsonpath="{.items[0].metadata.name}"'])
-        client_pod = output.decode("utf-8").replace('"', '')
+        client_pod = subprocess.check_output(['kubectl', '--context', 'mcs-am', 'get', 'po', '-o', 'jsonpath="{.items[0].metadata.name}"']).decode("utf-8").replace('"', '')
         
     print("\nTest setup complete.\n")
     time.sleep(5)
@@ -100,16 +89,15 @@ def init(place, service):
 def test(count, place, service):
 
     global filename
-
     now = datetime.datetime.now()
     filename = "iperf_results_{}.txt".format(now.strftime("%Y-%m-%d_%H-%M-%S"))
 
     with open(filename, 'w') as f:
         for i in range(int(count)):
 
-            if place == "1":
+            if place == "1": 
                 cmd = ['iperf', '-c', external_ip, '-u', '-i', args.interval, '-b', args.bandwidth, '-l', args.length, '-t', args.time, '-p', port]
-            if place == "2":
+            if place == "2": 
                 cmd = ["kubectl", "--context", "mcs-am", "exec", "-it", client_pod, "--", "iperf", "-c", mcs_clusterset_ip, "-u", "-i", args.interval, "-b", args.bandwidth, "-l", args.length, "-t", args.time, "-p", port]
             result = subprocess.run(cmd, stdout=subprocess.PIPE)
             output = result.stdout.decode('utf-8')
@@ -140,27 +128,13 @@ def write_result(input_file, output_file):
                 output_line = ','.join(values) + '\n'
                 out_f.write(output_line)
     
-
-def cleanup(place, service):
-
-    subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f','iperf-server.yml'])
     
-    if service == "1":
-        subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'iperf-server-lb.yml'])
-        
-    if service == "2":
-        subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'iperf-server-np.yml'])
-        
-    if place == "2":
-        subprocess.call(['kubectl', '--context', 'mcs-am', 'delete', '-f', 'iperf-client.yml'])
-        
-        if service == "1":
-            subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'serviceExport_lb.yml'])
-        
-        if service == "2":
-            subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'serviceExport_np.yml'])
-            
-    print("\nCleanup complete.\n")
+def reset(place, service):
+    #deletes every existing resources
+    subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'iperf-server.yml', '-f', 'iperf-server-lb.yml', '-f', 'iperf-server-np.yml', '-f', 'serviceExport_lb.yml', '-f', 'serviceExport_np.yml'], stderr=subprocess.DEVNULL)
+    subprocess.call(['kubectl', '--context', 'mcs-am', 'delete', '-f', 'iperf-client.yml'], stderr=subprocess.DEVNULL)
+    
+    print("\nReset complete.\n")
 
 if __name__ == "__main__":
 
@@ -177,4 +151,6 @@ if __name__ == "__main__":
     init(args.place, args.service)
     test(args.count, args.place, args.service)
     write_result(filename, "output.csv")
-    cleanup(args.place, args.service)
+    answer = input("Do you want to reset? (y/n): ")
+    if answer.lower() == "y": 
+        reset(args.place, args.service)
