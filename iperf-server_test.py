@@ -1,17 +1,12 @@
-#nodeport loadbalancer yml -- Tamás amerika np 5001?
-#python pandas
-#iperf test a terminálban is, nodeport csak néha out-of-order?
-
 import subprocess
 import time
 import argparse
-import datetime
-import re
+import datetime 	
 
 DEFAULT_INTERVAL = "1"
 DEFAULT_BANDWITH = "100m"
-DEFAULT_TIME = "10"
-DEFAULT_LENGTH ="200"
+DEFAULT_TIME = "60"
+DEFAULT_LENGTH ="100"
 DEFAULT_COUNT = "1"
 DEFAULT_PLACE = "1"
 DEFAULT_SERVICE = "1"
@@ -20,6 +15,7 @@ mcs_clusterset_ip = ""
 client_pod = ""
 port = "5001"
 filename = ""
+now= ""
 
 def init(place, service):
 
@@ -29,6 +25,13 @@ def init(place, service):
     global port
     
     subprocess.call(['kubectl', '--context', 'mcs-eu', 'apply', '-f', 'iperf-server.yml'])
+    
+    #wait for the server to be created
+    while True:
+            phase = subprocess.check_output(['kubectl', '--context', 'mcs-eu', 'get', 'po', '-o', 'jsonpath="{.items[0].status.phase}"']).decode("utf-8").replace('"', '')
+            if phase == "Running": 
+                break
+            time.sleep(3)
     
     #loadbalancer service
     if service == "1":
@@ -89,6 +92,7 @@ def init(place, service):
 def test(count, place, service):
 
     global filename
+    global now
     now = datetime.datetime.now()
     filename = "iperf_results_{}.txt".format(now.strftime("%Y-%m-%d_%H-%M-%S"))
 
@@ -110,6 +114,9 @@ def test(count, place, service):
     
 def write_result(input_file, output_file):
 
+    global now
+    str_date = now.strftime("%Y-%m-%d %H:%M:%S")
+
     with open(input_file, "r") as in_f, open(output_file, "a") as out_f:
         lines = in_f.readlines()
         for i in range(len(lines)):
@@ -121,16 +128,16 @@ def write_result(input_file, output_file):
                 l_avg, l_min, l_max, l_stdev = parts[12].split("/")
                 if args.place == "2":
                     rx, inp = parts[16].split("/")
-                    values = [args.place, args.service, args.bandwidth, args.length, int_st, int_end, parts[4], parts[6], parts[8], lost, total, l_avg, l_min, l_max, l_stdev, parts[14], rx, inp, parts[18]]
+                    values = [str_date, args.place, args.service, args.bandwidth, args.length, int_st, int_end, parts[4], parts[6], parts[8], lost, total, l_avg, l_min, l_max, l_stdev, parts[14], rx, inp, parts[18]]
                 if args.place == "1":
-                    values = [args.place, args.service, args.bandwidth, args.length, int_st, int_end, parts[4], parts[6], parts[8], lost, total, l_avg, l_min, l_max, l_stdev, parts[14], "", "", parts[16]]
+                    values = [str_date, args.place, args.service, args.bandwidth, args.length, int_st, int_end, parts[4], parts[6], parts[8], lost, total, l_avg, l_min, l_max, l_stdev, parts[14], "", "", parts[16]]
             
                 output_line = ','.join(values) + '\n'
                 out_f.write(output_line)
     
     
-def reset(place, service):
-    #deletes every existing resources
+def reset():
+    #delete every existing resources
     subprocess.call(['kubectl', '--context', 'mcs-eu', 'delete', '-f', 'iperf-server.yml', '-f', 'iperf-server-lb.yml', '-f', 'iperf-server-np.yml', '-f', 'serviceExport_lb.yml', '-f', 'serviceExport_np.yml'], stderr=subprocess.DEVNULL)
     subprocess.call(['kubectl', '--context', 'mcs-am', 'delete', '-f', 'iperf-client.yml'], stderr=subprocess.DEVNULL)
     
@@ -153,4 +160,4 @@ if __name__ == "__main__":
     write_result(filename, "output.csv")
     answer = input("Do you want to reset? (y/n): ")
     if answer.lower() == "y": 
-        reset(args.place, args.service)
+        reset()
