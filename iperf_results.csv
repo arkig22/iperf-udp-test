@@ -1,0 +1,1 @@
+Date,Place,Service,Bandwidth,Length,Interval_start(sec),Interval_end(sec),Transfer(MBytes),Bandwith(Mbits/sec),Jitter(msec),Lost,Total,Latency_avg(ms),Latency_min(ms),Latency_max(ms),Latency_stdev(ms),PPS(pps),Rx(pkts),inP(pkts),NetPwr

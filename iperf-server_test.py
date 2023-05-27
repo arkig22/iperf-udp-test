@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
     init(args.place, args.service)
     test(args.count, args.place, args.service)
-    write_result(filename, "output.csv")
+    write_result(filename, "iperf_results.csv")
     answer = input("Do you want to reset? (y/n): ")
     if answer.lower() == "y": 
         reset()
